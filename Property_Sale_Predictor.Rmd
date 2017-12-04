@@ -1,0 +1,321 @@
+---
+title: "Property Sale Predictor"
+author: "Bharath Sepuri"
+date: "November 2, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##replacing missing values and null values of Sales data with NA
+##filtering the most recent sales data
+##replacing missing values and null values of PropertyOwnerLoan data with NA
+##merging sales and propertyownerloan on PropertyID
+
+
+```{r 1}
+
+Sales <- read.csv(file = "sales_final.csv", stringsAsFactors =  FALSE)
+Sales[Sales == ""] <- NA
+Sales[Sales == "NULL"] <- NA
+str(Sales)
+
+
+install.packages("dplyr")
+library(dplyr)
+Sales_filtered <- Sales %>%
+                    group_by(PropertyID) %>%  
+                       arrange(desc(TransactionDate)) %>%
+                         do(head(.,n=1))
+#saveRDS(Sales_filtered, file = "Sales_filtered_full_clean.rds")
+
+
+PropertyOwnerLoan <-read.csv(file = "pol_final.csv",stringsAsFactors = FALSE)
+PropertyOwnerLoan[PropertyOwnerLoan == ""] <- NA
+PropertyOwnerLoan[PropertyOwnerLoan == "NULL"] <- NA
+#saveRDS(PropertyOwnerLoan, file = "PropertyOwnerLoan_full_clean.rds")
+
+
+#sales <- readRDS("Sales_filtered_full_clean.rds")
+#propertyownerloan <- readRDS("PropertyOwnerLoan_full_clean.rds")
+
+PropertySales <-merge(sales, propertyownerloan , by = "PropertyID")
+PropertySales<-PropertySales[PropertySales$PropertyType=="Multifamily",]
+
+#saveRDS(PropertySales, file = "PropertySales_full_clean.rds")
+
+```
+
+##selecting the most potential predictors and saving the final data
+##manipulating the variables to maintain data consistency
+
+```{r 2}
+
+#PropertySales<-readRDS("PropertySales_full_clean.rds")
+
+PropertySales_final<-PropertySales[,c("PropertyID","TransactionType","NOIAmount","MaturityDate","TransactionDate", "LastTransactionDate","LastTransactionAmount","NumUnits","OrigLoanAmt","LoanCount","WAInterestRate","LoanTermMonths","TotSqrFt","RentableSqrFt","AverageRentAmt", "CurOccupancyPct")]
+
+#saveRDS(PropertySales_final, file = "PropertySales_final.rds")
+
+PropertySales_final<-readRDS("PropertySales_final.rds")
+PropertySales_final <- PropertySales_final[-which(PropertySales_final$LoanTermMonths < 0),]
+PropertySales_final <- PropertySales_final[-which(PropertySales_final$TransactionType =="Entity Level"),]
+
+```
+
+##converting strings as integers
+##converting strings as factors
+
+```{r 3}
+
+PropertySales_final[, c(
+  "NOIAmount",
+  "NumUnits",
+  "OrigLoanAmt",
+  "LastTransactionAmount",
+  "LoanCount",
+  "WAInterestRate",
+  "LoanTermMonths",
+  "TotSqrFt",
+  "RentableSqrFt",
+  "CurOccupancyPct",
+  "AverageRentAmt"
+)] <-
+  lapply(PropertySales_final[, c(
+    "NOIAmount",
+    "NumUnits",
+    "OrigLoanAmt",
+    "LastTransactionAmount",
+    "LoanCount",
+     "WAInterestRate",
+    "LoanTermMonths",
+    "TotSqrFt",
+    "RentableSqrFt",
+    "CurOccupancyPct",
+    "AverageRentAmt"
+  )], as.integer)
+
+
+PropertySales_final$TransactionType <- factor(PropertySales_final$TransactionType)
+str(PropertySales_final)
+
+```
+
+##changing the data type of dates to date format
+##replacing missing values of MaturityDate with LastTransactiondate+10
+
+```{r 4}
+
+PropertySales_final$TransactionDate <- as.Date(PropertySales_final$TransactionDate,format = "%m/%d/%Y")
+PropertySales_final$LastTransactionDate <- as.Date(PropertySales_final$LastTransactionDate,format = "%m/%d/%Y")
+PropertySales_final$MaturityDate <- as.Date(PropertySales_final$MaturityDate,format = "%m/%d/%Y")
+
+library("lubridate")
+PropertySales_final$MaturityDate[is.na(PropertySales_final$MaturityDate)&!is.na(PropertySales_final$LastTransactionDate)]<-PropertySales_final$LastTransactionDate+years(10)
+
+```
+
+##Partioning data into train and test sets 
+
+```{r 5}
+
+set.seed(123)
+smp_size<-floor(0.70*nrow(PropertySales_final))
+train_ind<-sample(seq_len(nrow(PropertySales_final)),size=smp_size)
+train<-PropertySales_final[train_ind,]
+#removing TransactionType, LoanMaturityDate and LoanAmount from test set
+test<-PropertySales_final[-train_ind,]
+str(train)
+str(test)
+
+```
+
+##Summary of all missing value information in train and test sets
+
+```{r 6}
+
+#Train Set:
+mis_vars_train <- data.frame(colSums(sapply(train, is.na)))
+colnames(mis_vars_train) <- 'No_of_NAs'
+mis_vars_train
+#Test Set:
+mis_vars_test <- data.frame(colSums(sapply(test, is.na)))
+colnames(mis_vars_test) <- 'No_of_NAs'
+mis_vars_test
+
+```
+
+##Replacing NA values in train and test sets using bagImpute method 
+
+```{r 7}
+
+library(caret)
+#Train Set
+bagImpute_train <-predict(preProcess(train[,which(names(train) %in% 
+                  c("NOIAmount", "NumUnits","OrigLoanAmt", "LastTransactionAmount", "LoanCount", "WAInterestRate", "LoanTermMonths", "TotSqrFt", "RentableSqrFt", "AverageRentAmt", "CurOccupancyPct" ))], 
+                  method= c("bagImpute")),
+                  train[,which(names(train) %in%
+                  c("NOIAmount", "NumUnits","OrigLoanAmt", "LastTransactionAmount", "LoanCount", "WAInterestRate", "LoanTermMonths", "TotSqrFt", "RentableSqrFt", "AverageRentAmt", "CurOccupancyPct" ))])
+
+train$NOIAmount <- bagImpute_train$NOIAmount
+train$NumUnits <- bagImpute_train$NumUnits
+train$OrigLoanAmt <- bagImpute_train$OrigLoanAmt
+train$LastTransactionAmount <- bagImpute_train$LastTransactionAmount
+train$LoanCount <- bagImpute_train$LoanCount
+train$WAInterestRate <- bagImpute_train$WAInterestRate
+train$LoanTermMonths <- bagImpute_train$LoanTermMonths
+train$TotSqrFt <- bagImpute_train$TotSqrFt
+train$RentableSqrFt <- bagImpute_train$RentableSqrFt
+train$AverageRentAmt <- bagImpute_train$AverageRentAmt
+train$CurOccupancyPct <- bagImpute_train$CurOccupancyPct
+
+#Test Set
+bagImpute_test <-predict(preProcess(test[,which(names(test) %in% 
+                                                    c("NOIAmount", "NumUnits","OrigLoanAmt", "LastTransactionAmount", "LoanCount", "WAInterestRate", "LoanTermMonths", "TotSqrFt", "RentableSqrFt", "AverageRentAmt", "CurOccupancyPct" ))], 
+                                     method= c("bagImpute")),
+                          test[,which(names(test) %in%
+                                         c("NOIAmount", "NumUnits","OrigLoanAmt", "LastTransactionAmount", "LoanCount", "WAInterestRate", "LoanTermMonths", "TotSqrFt", "RentableSqrFt", "AverageRentAmt", "CurOccupancyPct" ))])
+
+test$NOIAmount <- bagImpute_test$NOIAmount
+test$NumUnits <- bagImpute_test$NumUnits
+test$OrigLoanAmt <- bagImpute_test$OrigLoanAmt
+test$LastTransactionAmount <- bagImpute_test$LastTransactionAmount
+test$LoanCount <- bagImpute_test$LoanCount
+test$WAInterestRate <- bagImpute_test$WAInterestRate
+test$LoanTermMonths <- bagImpute_test$LoanTermMonths
+test$TotSqrFt <- bagImpute_test$TotSqrFt
+test$RentableSqrFt <- bagImpute_test$RentableSqrFt
+test$AverageRentAmt <- bagImpute_test$AverageRentAmt
+test$CurOccupancyPct <- bagImpute_test$CurOccupancyPct
+
+#omitting missing date records
+train <- na.omit(train)
+test<-na.omit(test)
+
+```
+
+##fitting a logistic regression model
+
+```{r 8}
+
+#creating logistic regression model using train data
+model1<-glm(TransactionType~.,family=binomial(link="logit"),train)
+summary(model1)
+
+#back elimination of predictors having low p-value
+train <- train[-12]
+test <- test[-12]
+model1<-glm(TransactionType~.,family=binomial(link="logit"),train)
+summary(model1)
+train <- train[, -c(2,7)]
+test <- test[, -c(2,7)]
+model1<-glm(TransactionType~.,family=binomial(link="logit"),train)
+summary(model1)
+train <- train[,c(-2,-3)]
+test <- test[,c(-2,-3)]
+model1<-glm(TransactionType~.,family=binomial(link="logit"),train)
+summary(model1)
+
+```
+
+##evaluating the performance on test data: confusionMatrix, ROC and AUC
+
+```{r 9}
+
+p<-predict(model1,test,type="response")
+summary(p)
+
+#turn probabilities into classes and look at their frequencies
+p_class <- ifelse(p>0.50, "Sale", "Refinance")
+table(p_class)
+table(test$TransactionType)
+
+#comparing predicted vs actual classes using Confusion Matrix 
+confusionMatrix(p_class, test$TransactionType)
+
+#Creating ROC curve
+library(caTools)
+colAUC(p, test$TransactionType, plotROC = TRUE)
+
+```
+
+##Cross-validation - creating a traincontrol object with 5 folds
+
+```{r 10}
+
+library(caret)
+set.seed(42)
+myFolds <- createFolds(train$TransactionType, k=5)
+myControl <- trainControl(
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE,
+  verboseIter = TRUE,
+  savePredictions = TRUE,
+  index = myFolds
+)
+
+```
+
+##glmnet model - Lasso Regression and Ridge Regression (tuning glm model)
+
+```{r 11}
+
+set.seed(42)
+model_glmnet<-train(TransactionType~.,train, 
+                    metric="ROC",
+                    method="glmnet",
+                    tuneGrid = expand.grid(
+                        alpha=0:1,
+                        lambda = 0:10/10
+                      ),
+                      trControl=myControl)
+
+p1<-predict(model_glmnet,test)
+confusionMatrix(p1, test$TransactionType)
+
+#plot the results
+plot(model_glmnet)
+
+```
+
+##randomforest model         (contains default values of tuning parameters)
+
+```{r 12}
+
+library(caret)
+library(mlbench)
+set.seed(42)
+model_rf<-train(TransactionType~.,train, 
+                metric="ROC",
+                method="ranger",
+                trControl=myControl)
+
+p2<-predict(model_rf,test)
+confusionMatrix(p2, test$TransactionType)
+
+#plot the results
+plot(model_rf)
+
+```
+
+##comapring glmnet and randomforest models
+
+```{r 13}
+
+model_list <- list(glmnet = model_glmnet, rf=model_rf)
+#collect resamples from the CV folds
+(resamps <- resamples(model_list))
+summary(resamps)
+#Box-and-whisker plot
+bwplot(resamps, metric="ROC")
+#Dot plot
+dotplot(resamps, metric="ROC")
+#Density plot
+densityplot(resamps, metric="ROC")
+#Scatter plot
+xyplot(resamps, metric="ROC")
+
+
+```

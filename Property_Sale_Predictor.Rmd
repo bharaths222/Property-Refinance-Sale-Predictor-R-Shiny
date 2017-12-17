@@ -258,7 +258,7 @@ myControl <- trainControl(
 
 ```
 
-##glmnet model - Lasso Regression and Ridge Regression (tuning glm model)
+##glmnet model - Lasso Regression and Ridge Regression
 
 ```{r 11}
 
@@ -280,7 +280,7 @@ plot(model_glmnet)
 
 ```
 
-##randomforest model         (contains default values of tuning parameters)
+##randomforest model        
 
 ```{r 12}
 

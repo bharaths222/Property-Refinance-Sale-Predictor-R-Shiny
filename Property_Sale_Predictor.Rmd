@@ -285,7 +285,6 @@ plot(model_glmnet)
 ```{r 12}
 
 library(caret)
-library(mlbench)
 set.seed(42)
 model_rf<-train(TransactionType~.,train, 
                 metric="ROC",

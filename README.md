@@ -1,7 +1,7 @@
-Predicting the transaction type (Sale or Refinance) of different properties/houses based on Real Estate Property Sales data. 
-Also, created a user interface using R Shiny.
+- Built predictive models for predicting the transaction type (Sale or Refinance) of various properties/houses based on Real Estate Property Sales data of few  neighborhoods in Seattle. 
+- Developed interactive web application using R and Shiny web framework giving the users ability to change the variables/factors and see the predictions live.
 
-Used Logistic Regression and Random Forest methods to implement the models.
+Used Logistic Regression and Random Forest methods to implement and tune the predictive models.
 
 
 Libraries required:
